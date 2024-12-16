@@ -21,15 +21,15 @@ add_compile_definitions(WIN32)
 
 
 # Specify source files
-file(GLOB_RECURSE SOURCES            ${CMAKE_SOURCE_DIR}/src/*.cpp)
 file(GLOB_RECURSE LOCAL_SOURCES      ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+file(GLOB_RECURSE SOURCES            ${CMAKE_SOURCE_DIR}/src/*.cpp)
 
 
 
 # Specify include directories
 include_directories(
-    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
 
     # Add external include directories if needed
     )
@@ -49,12 +49,9 @@ link_libraries(
 
 
 # Add source to this project's executable.
-add_executable(${PROJECT_NAME} ${SOURCES} ${LOCAL_SOURCES})
+add_executable(${PROJECT_NAME} ${LOCAL_SOURCES} ${SOURCES})
 
 
 
 # Dependency on top-level code clean-up 
 add_dependencies(${PROJECT_NAME} clang_format)
-
-
-

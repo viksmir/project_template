@@ -1,34 +1,24 @@
+###################################################################################################################################################### 
+##
+##    This script was originally produced for the GitHub repo provided below under the "Do WHat You Want With It" license.
+##
+##    Repo: https://github.com/viksmir/project_template
+##
+###################################################################################################################################################### 
+
+
+
 import os
-import glob
 import shutil
 import argparse
 import subprocess
 from pathlib import Path
 
 
-# Define argument parser
-parser = argparse.ArgumentParser(
-                    prog='File search and copy helper script.',
-                    description='Copies either a single file, or multiple files by search (either by extensions or glob query).')
 
-parser.add_argument('-o', '--out_dir',    action='store',      required=True,  help='Output directory')                                        
-parser.add_argument('-b', '--bin_dir',    action='store',      required=True,  help='Output of all binary files for the build (equivalent to CMAKE_CURRENT_BINARY_DIR)')                                          
-parser.add_argument('-p', '--proj',       action='store',      required=False, help='Comma-separated projects in the build')
-parser.add_argument('-t', '--test_proj',  action='store',      required=False, help='Comma-separated test projects in the build')
-parser.add_argument('-c', '--coverage',   action='store_true', required=False, help='Attempt to perform coverage analysis on the test projects')
-
-args = parser.parse_args()
-
-args.out_dir = Path(os.path.abspath(args.out_dir)).as_posix() if (args.out_dir is not None) else None
-args.bin_dir = Path(os.path.abspath(args.bin_dir)).as_posix() if (args.bin_dir is not None) else None
-
-
-
-project_list      = [s.strip() for s in args.proj.split(',')      if (len(s) > 0)]
-test_project_list = [s.strip() for s in args.test_proj.split(',') if (len(s) > 0)]
-
-
-
+######################################################################################################################################################
+##  Helper methods  ##################################################################################################################################
+######################################################################################################################################################
 
 
 
@@ -141,9 +131,6 @@ def copy_files(out_dir, clear=False, file=None, src_dir=None, extensions=None, r
 
 
 
-
-
-
 def process_project(args, project_name, test_proj):
     print(f'Processing "{project_name}" project ...')
 
@@ -154,14 +141,20 @@ def process_project(args, project_name, test_proj):
     if (test_proj) and (args.coverage):
         # Execute the unit test to generate coverage metadata
         print(f'... executing the coverage binaries ...')
-        with open(f'{args.bin_dir}/{project_name}/{project_name}_out.txt', 'w') as output_file:
-            with open(f'{args.bin_dir}/{project_name}/{project_name}_err.txt', 'w') as error_file:
+        with open(f'{args.bin_dir}/{project_name}/{project_name}_out.txt', 'w') as test_output_file:
+            with open(f'{args.bin_dir}/{project_name}/{project_name}_err.txt', 'w') as test_error_file:
                 executable_path = f'{args.bin_dir}/{project_name}/{project_name}.exe'
                 if (os.path.exists(executable_path) == False):
                     print(f'WARNING: executable {executable_path} could not be found, leaving with no action performed')
                     return
-                subprocess.run([executable_path], stdout=output_file, stderr=error_file)
+                test_result = subprocess.run([executable_path],
+                                              stdout=test_output_file,
+                                              stderr=test_error_file)
 
+                if (test_result.returncode != 0):
+                    print(f'...... unit test ERROR, error log available at {test_error_file.name} ...')
+                    exit(-1)
+            
         # Copy all RELEVANT coverage metadata files to the buffer directory
         print(f'... copying coverage metadata ...')
         copy_files(out_dir=f'{args.bin_dir}/{project_name}/coverage_metadata', src_dir=f'{args.bin_dir}/{project_name}/CMakeFiles/{project_name}.dir/',        clear=True, recursive=False, keep_paths=True, shrink=False, extensions='gcno,gcda')
@@ -169,29 +162,71 @@ def process_project(args, project_name, test_proj):
         
         # Generate coverage report
         print(f'... generating coverage report ...')
-        with open(f'{args.bin_dir}/{project_name}/{project_name}_gcovr_out.txt', 'w') as output_file:
-            with open(f'{args.bin_dir}/{project_name}/{project_name}_gcovr_err.txt', 'w') as error_file:
+        with open(f'{args.bin_dir}/{project_name}/{project_name}_gcovr_out.txt', 'w') as coverage_output_file:
+            with open(f'{args.bin_dir}/{project_name}/{project_name}_gcovr_err.txt', 'w') as coverage_error_file:
                 Path(f'{args.out_dir}/coverage_report').mkdir(parents=True, exist_ok=True)
-                result = subprocess.run(['gcovr',
-                                         '--root', '.',
-                                         '--html', '--html-details',
-                                         '--output', f'{args.out_dir}/coverage_report/coverage_report.html',
-                                         '--object-directory', f'{args.bin_dir}/{project_name}/coverage_metadata',
-                                         '--exclude-directories', './extern',
-                                         '-j', '12', '--verbose'],
-                                             stdout=output_file,
-                                             stderr=error_file)
-                if (result):
-                    print(f'...... generation ok, coverage report available at {args.out_dir}/coverage_report/coverage_report.html ...')
+                
+                command_args = ['gcovr',
+                                '--verbose',
+                                '--root', './src',
+                                '--html', '--html-details',
+                                '--output', f'{args.out_dir}/coverage_report/coverage_report.html',
+                                '--object-directory', f'{args.bin_dir}/{project_name}/coverage_metadata',]
+                
+                if (args.mode == 'clang'):
+                    command_args = command_args + ['--html-title', '"Clang Code Coverage Report"']
+                    command_args = command_args + ['--gcov-executable', '"llvm-cov gcov"']
                 else:
-                    print(f'...... generation error, error log available at {error_file} ...')
+                    command_args = command_args + ['--html-title', '"GCC Code Coverage Report"']
+                          
+                command = ' '.join(command_args)
+                
+                coverage_result = subprocess.run(command,
+                                                 stdout=coverage_output_file,
+                                                 stderr=coverage_error_file)
+                                
+                if (coverage_result.returncode == 0):
+                    print(f'...... generation OK')
+                    print(f'               unit test output: {test_output_file.name}')
+                    print(f'                         report: {args.out_dir}/coverage_report/coverage_report.html')
+                else:
+                    print(f'...... generation ERROR, error log available at {coverage_error_file.name} ...')
         
     print(f'... DONE')
     pass
 
 
 
+######################################################################################################################################################
+##  Main logic  ######################################################################################################################################
+######################################################################################################################################################
 
+
+
+# Define argument parser
+parser = argparse.ArgumentParser(
+                    prog='File search and copy helper script.',
+                    description='Copies either a single file, or multiple files by search (either by extensions or glob query).')
+
+parser.add_argument('-m', '--mode',       action='store',      required=True,  help='Indicate usage mode and whether the code is compiled by Clang or GCC, but not both. Applied to all projects.')
+parser.add_argument('-o', '--out_dir',    action='store',      required=True,  help='Output directory')
+parser.add_argument('-b', '--bin_dir',    action='store',      required=True,  help='Output of all generated files for the build (equivalent to CMAKE_CURRENT_BINARY_DIR)')
+parser.add_argument('-p', '--proj',       action='store',      required=False, help='Comma-separated projects in the build')
+parser.add_argument('-t', '--test_proj',  action='store',      required=False, help='Comma-separated test projects in the build')
+parser.add_argument('-c', '--coverage',   action='store_true', required=False, help='Attempt to perform coverage analysis on the test projects')
+
+args = parser.parse_args()
+
+args.out_dir = Path(os.path.abspath(args.out_dir)).as_posix() if (args.out_dir is not None) else None
+args.bin_dir = Path(os.path.abspath(args.bin_dir)).as_posix() if (args.bin_dir is not None) else None
+
+
+if (args.mode != 'gcc') and (args.mode != 'clang'):
+    raise SystemExit(f'ERROR: specify only one usage mode, either "clang" or "gcc", leaving...')
+    
+    
+project_list      = [s.strip() for s in args.proj.split(',')      if (len(s) > 0)]
+test_project_list = [s.strip() for s in args.test_proj.split(',') if (len(s) > 0)]
 
 
 # Clean the output directory
@@ -202,24 +237,12 @@ if os.path.exists(args.out_dir):
 Path(args.out_dir).mkdir(parents=True, exist_ok=True)
 
 
-
-
-
-
 for project in project_list:
     process_project(args, project, test_proj=False)
 
 
-
-
-
-
 for project in test_project_list:
     process_project(args, project, test_proj=True)
-
-
-
-
 
 
 print(f'COMPLETE: Finished processing projects')
